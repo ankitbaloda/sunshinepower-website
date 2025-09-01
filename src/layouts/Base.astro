@@ -1,0 +1,29 @@
+
+---
+import TabBar from '../components/TabBar.astro';
+import WhatsAppFab from '../components/WhatsAppFab.astro';
+const { title = 'Sunshine Power', active = 'home' } = Astro.props;
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <link rel="icon" href="/assets/logo.svg" type="image/svg+xml" />
+    <title>{title}</title>
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand container">
+        <img src="/assets/logo.svg" alt="Logo" />
+        <div class="name">Sunshine Power</div>
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <WhatsAppFab />
+    <TabBar active={active} />
+  </body>
+</html>

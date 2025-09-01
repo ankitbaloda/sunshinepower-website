@@ -1,0 +1,30 @@
+
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Contact — Sunshine Power" active="contact">
+  <div class="container">
+    <div class="h2">Contact</div>
+    <div class="form">
+      <form name="contact" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thank-you">
+        <input type="hidden" name="form-name" value="contact" />
+        <p style="display:none"><label>Don’t fill this out: <input name="bot-field" /></label></p>
+        <label for="name">Name</label>
+        <input id="name" name="name" placeholder="Full name" required />
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" placeholder="10-digit number" pattern="\d{10}" required />
+        <label for="village">Village / Town</label>
+        <input id="village" name="village" placeholder="e.g., Paota" />
+        <label for="message">Message</label>
+        <textarea id="message" name="message" rows="5" placeholder="Avg bill, roof type (RCC/Tin), preferred day/time"></textarea>
+        <button class="button" type="submit">Send</button>
+        <a class="button secondary" href="https://wa.me/917725920701" style="margin-left:8px">Chat on WhatsApp</a>
+      </form>
+    </div>
+    <div class="container">
+      <p><strong>Phone:</strong> <a href="tel:+917725920701">+91 7725920701</a></p>
+      <p><strong>Email:</strong> <a href="mailto:contact@sunshinepower.net.in">contact@sunshinepower.net.in</a></p>
+      <p><strong>Website:</strong> <a href="https://sunshinepower.net.in">sunshinepower.net.in</a></p>
+    </div>
+  </div>
+</Base>

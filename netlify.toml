@@ -1,0 +1,11 @@
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+  node_version = "20"
+
+[dev]
+  framework = "astro"
+
+[build.processing]
+  skip_processing = true
