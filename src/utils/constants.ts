@@ -3,7 +3,7 @@ export const COMPANY_INFO = {
   domain: 'sunshinepower.net.in',
   phone: '7734860701',
   whatsapp: 'https://wa.me/917734860701',
-  email: 'info@sunshinepower.net.in',
+  email: 'contact@sunshinepower.net.in',
   address: {
     street: 'Ward No. 01, Kaimriya Ki Dhani, Tulsipura, Paota',
     city: 'Jaipur',
