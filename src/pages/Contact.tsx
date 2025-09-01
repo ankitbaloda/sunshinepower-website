@@ -102,13 +102,12 @@ const Contact: React.FC<ContactProps> = ({ onNavigate }) => {
                       </div>
                     </div>
 
-                    <div className="flex items-start space-x-4 p-4 bg-white rounded-xl shadow-sm">
+                      <div className="flex items-start space-x-4 p-4 bg-white rounded-xl shadow-sm">
                       <Clock className="text-[#F7C948] mt-1" size={24} />
                       <div>
                         <h3 className="font-bold text-[#173B63] mb-2">Business Hours</h3>
                         <div className="text-gray-600">
-                          <p>Monday - Saturday: 9:00 AM - 6:00 PM</p>
-                          <p>Sunday: Closed</p>
+                          <p>All Days: 8:00 AM - 8:00 PM</p>
                           <p className="text-sm text-green-600 mt-2">Emergency support available 24/7</p>
                         </div>
                       </div>
@@ -118,7 +117,7 @@ const Contact: React.FC<ContactProps> = ({ onNavigate }) => {
                       <h3 className="font-bold text-[#173B63] mb-2">Service Area</h3>
                       <p className="text-gray-700">
                         We provide solar installation services across Jaipur and surrounding areas including 
-                        Ajmer, Tonk, Dausa, and other nearby districts in Rajasthan.
+                        Ajmer, Tonk, Dausa, Alwar, Khairthal, Shahpura, Kotputli, Behror, Bhiwadi, Thanagazi, Viratnagar, Paota and other nearby districts in Rajasthan.
                       </p>
                     </div>
                   </div>
@@ -159,7 +158,7 @@ const Contact: React.FC<ContactProps> = ({ onNavigate }) => {
                   },
                   {
                     question: 'What government subsidies are available?',
-                    answer: 'The central government provides ₹14,588 per kW for systems up to 3kW and ₹7,294 per kW for additional capacity up to 10kW. We handle all subsidy paperwork for you.'
+                    answer: 'For residential applicants the central government provides subsidies as follows: ₹30,000 for 1 kW, ₹60,000 for 2 kW, and ₹78,000 for 3 kW. The maximum subsidy available from the central government is ₹78,000. We handle all subsidy paperwork for you.'
                   },
                   {
                     question: 'How long does installation take?',

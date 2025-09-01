@@ -17,7 +17,7 @@ const ServicesPage: React.FC = () => {
         'Complete documentation and warranties',
         '25-year performance guarantee'
       ],
-      image: 'https://images.pexels.com/photos/9875435/pexels-photo-9875435.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+  image: '/images/solar-plates/solar1.png',
       pricing: 'Starting from ₹65,000/kW'
     },
     {
@@ -32,7 +32,7 @@ const ServicesPage: React.FC = () => {
         'Regulatory compliance advice',
         'Ongoing technical support'
       ],
-      image: 'https://images.pexels.com/photos/8837717/pexels-photo-8837717.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+  image: '/images/solar-plates/solar4.png',
       pricing: 'Free for installations'
     },
     {
@@ -47,7 +47,7 @@ const ServicesPage: React.FC = () => {
         'System optimization and upgrades',
         '24/7 emergency support'
       ],
-      image: 'https://images.pexels.com/photos/2800832/pexels-photo-2800832.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+  image: '/images/solar-plates/solar7.png',
       pricing: 'AMC from ₹2,500/year'
     },
     {
@@ -62,7 +62,7 @@ const ServicesPage: React.FC = () => {
         'Subsidy disbursement assistance',
         'Maximum benefit optimization'
       ],
-      image: 'https://images.pexels.com/photos/7078662/pexels-photo-7078662.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+  image: '/images/solar-plates/solar10.png',
       pricing: 'Included in installation'
     }
   ];

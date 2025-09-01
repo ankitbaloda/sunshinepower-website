@@ -15,24 +15,14 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Company Info */}
           <div className="lg:col-span-2">
-            <div className="flex items-center space-x-2 mb-6">
-              <div className="relative w-10 h-10">
-                <svg viewBox="0 0 40 40" className="w-full h-full">
-                  <circle cx="20" cy="12" r="8" fill="#F7C948" />
-                  <path d="M20 2 L20 6 M30 12 L26 12 M28 6 L25 9 M12 6 L15 9 M10 12 L14 12 M12 18 L15 15 M28 18 L25 15" 
-                        stroke="#F7C948" strokeWidth="2" strokeLinecap="round" />
-                  <rect x="8" y="22" width="24" height="16" rx="2" fill="#F7C948" />
-                  <g stroke="#173B63" strokeWidth="1">
-                    <line x1="14" y1="22" x2="14" y2="38" />
-                    <line x1="20" y1="22" x2="20" y2="38" />
-                    <line x1="26" y1="22" x2="26" y2="38" />
-                    <line x1="8" y1="28" x2="21" y2="28" />
-                    <line x1="8" y1="32" x2="21" y2="32" />
-                  </g>
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-[#F7C948]">SUNSHINE POWER</h3>
+            <div className="flex items-center space-x-3 mb-6">
+              {/* Crop visual whitespace around logo using a fixed-height overflow-hidden wrapper */}
+              <div className="w-36 h-12 overflow-hidden rounded">
+                <img
+                  src="/Complete-Logo.jpg"
+                  alt="Sunshine Power"
+                  className="w-full h-full object-cover object-center"
+                />
               </div>
             </div>
             
@@ -100,7 +90,7 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               <h5 className="text-sm font-semibold text-[#F7C948] mb-3">Business Hours</h5>
               <div className="flex items-center space-x-2 text-gray-300">
                 <Clock size={14} />
-                <span className="text-sm">Mon-Sat: 9AM-6PM</span>
+                <span className="text-sm">All Days: 8AM-8PM</span>
               </div>
             </div>
           </div>

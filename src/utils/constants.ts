@@ -15,7 +15,7 @@ export const COMPANY_INFO = {
     lat: 26.9124,
     lng: 75.7873
   },
-  tagline: 'Harness the Sun. Power Your Future.',
+  tagline: 'Solar Vendor (PM Surya Ghar)',
   description: 'Jaipur\'s trusted rooftop solar partner—design, installation & subsidy guidance.',
   services: [
     'Solar Installation',
@@ -48,5 +48,13 @@ export const CITIES = [
   'Ajmer',
   'Bikaner',
   'Alwar',
+  'Khairthal',
+  'Shahpura',
+  'Kotputli',
+  'Behror',
+  'Bhiwadi',
+  'Thanagazi',
+  'Viratnagar',
+  'Paota',
   'Other'
 ];
