@@ -64,11 +64,11 @@ const SEO: React.FC<SEOProps> = ({
             }
           },
           {
-            "@type": "Question", 
+            "@type": "Question",
             "name": "What government subsidies are available for solar in Rajasthan?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "The Government of India provides a subsidy of ₹14,588 per kW for systems up to 3kW and ₹7,294 per kW for additional capacity up to 10kW. State-specific incentives may also be available."
+              "text": "For residential applicants the central government provides subsidies as follows: ₹30,000 for 1 kW, ₹60,000 for 2 kW, and ₹78,000 for 3 kW. The maximum subsidy available from the central government is ₹78,000. State-specific incentives may also be available."
             }
           },
           {

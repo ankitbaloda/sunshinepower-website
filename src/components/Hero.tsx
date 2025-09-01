@@ -11,9 +11,8 @@ const Hero: React.FC<HeroProps> = ({ onGetConsultation }) => {
     <section className="relative bg-gradient-to-br from-[#E6F2FF] via-[#E6F2FF] to-blue-50 pt-20 pb-16 overflow-hidden">
       {/* Background Pattern */}
       <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-20 left-10 w-32 h-32 bg-[#173B63] rounded-full"></div>
+        {/* left-side blue circles removed to keep background uniform */}
         <div className="absolute bottom-20 right-10 w-24 h-24 bg-[#F7C948] rounded-full"></div>
-        <div className="absolute top-1/2 left-1/4 w-16 h-16 bg-[#173B63] rounded-full"></div>
       </div>
 
       <div className="container mx-auto px-4 relative z-10">
@@ -32,9 +31,9 @@ const Hero: React.FC<HeroProps> = ({ onGetConsultation }) => {
 
           {/* Hero Image */}
           <div className="relative mb-8">
-            <img 
-              src="https://images.pexels.com/photos/9875435/pexels-photo-9875435.jpeg?auto=compress&cs=tinysrgb&w=1200&h=600&fit=crop"
-              alt="Solar panels installation on rooftop in Jaipur"
+            <img
+              src="/images/hero.jpg"
+              alt="Solar panels at sunset"
               className="w-full max-w-2xl mx-auto rounded-2xl shadow-2xl"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-2xl"></div>
@@ -66,8 +65,8 @@ const Hero: React.FC<HeroProps> = ({ onGetConsultation }) => {
               <div className="text-gray-600">Happy Customers</div>
             </div>
             <div className="text-center p-4">
-              <div className="text-3xl font-bold text-[#173B63]">5MW+</div>
-              <div className="text-gray-600">Solar Installed</div>
+              <div className="text-3xl font-bold text-[#173B63]">1000 kW+</div>
+                <div className="text-gray-600">Solar Installed</div>
             </div>
             <div className="text-center p-4">
               <div className="text-3xl font-bold text-[#173B63]">24/7</div>

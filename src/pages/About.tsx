@@ -5,29 +5,29 @@ import SEO from '../components/SEO';
 const About: React.FC = () => {
   const achievements = [
     { icon: Users, label: 'Happy Customers', value: '500+' },
-    { icon: Zap, label: 'Solar Capacity Installed', value: '5MW+' },
-    { icon: Award, label: 'Years Experience', value: '8+' },
+    { icon: Zap, label: 'Solar Capacity Installed', value: '1000 kW+' },
+    { icon: Award, label: 'Expertise', value: 'Certified Professionals' },
     { icon: Heart, label: 'CO₂ Saved', value: '2000+ tons' }
   ];
 
   const team = [
     {
-      name: 'Rajesh Kumar',
-      role: 'Founder & CEO',
-      experience: '10+ years in renewable energy',
-      image: 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=300&h=300&fit=crop'
+  name: 'Vikash',
+  role: 'Founder & CEO',
+  experience: 'Renewable energy professional',
+  image: '/images/Vikash.jpg'
     },
     {
-      name: 'Priya Sharma',
-      role: 'Technical Director',
-      experience: 'Solar engineering expert',
-      image: 'https://images.pexels.com/photos/3756679/pexels-photo-3756679.jpeg?auto=compress&cs=tinysrgb&w=300&h=300&fit=crop'
+  name: 'Mamta',
+  role: 'Office Assistant',
+  experience: 'Office Administration',
+  image: 'https://images.pexels.com/photos/3756679/pexels-photo-3756679.jpeg?auto=compress&cs=tinysrgb&w=300&h=300&fit=crop'
     },
     {
-      name: 'Amit Singh',
-      role: 'Installation Manager',
-      experience: 'Certified solar installer',
-      image: 'https://images.pexels.com/photos/2102415/pexels-photo-2102415.jpeg?auto=compress&cs=tinysrgb&w=300&h=300&fit=crop'
+  name: 'Bhairu',
+  role: 'Installation Manager',
+  experience: 'Certified solar installer',
+  image: '/images/bhairu-2.jpg'
     }
   ];
 
@@ -65,12 +65,11 @@ const About: React.FC = () => {
                   </h2>
                   <div className="space-y-6 text-gray-600 leading-relaxed">
                     <p>
-                      Founded in 2016 in the heart of Jaipur, Sunshine Power began with a simple yet powerful vision: 
-                      to make solar energy accessible and affordable for every household in Rajasthan.
+                      Sunshine Power began with a simple yet powerful vision: to make solar energy accessible and affordable for every household in Rajasthan.
                     </p>
                     <p>
-                      What started as a small team of passionate engineers has grown into one of Jaipur's most trusted 
-                      solar installation companies. We've installed over 5MW of solar capacity, helping families 
+                      What started as a small team of passionate engineers in Tulsipura Village, Paota, Jaipur has grown into one of the most trusted
+                      solar installation companies. We've installed over 1000 kW of solar capacity, helping families
                       save crores in electricity bills while contributing to a cleaner environment.
                     </p>
                     <p>
@@ -82,14 +81,14 @@ const About: React.FC = () => {
                 </div>
                 
                 <div className="relative">
-                  <img 
-                    src="https://images.pexels.com/photos/2800832/pexels-photo-2800832.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop"
+                  <img
+                    src="/images/solar-plates/solar3.png"
                     alt="Solar installation team at work"
                     className="rounded-2xl shadow-2xl"
                   />
                   <div className="absolute -bottom-6 -left-6 bg-[#F7C948] text-[#173B63] p-4 rounded-2xl shadow-lg">
-                    <p className="font-bold text-lg">8+ Years</p>
-                    <p className="text-sm">of Excellence</p>
+                    <p className="font-bold text-lg">Trusted Excellence</p>
+                    <p className="text-sm">Quality & Support</p>
                   </div>
                 </div>
               </div>

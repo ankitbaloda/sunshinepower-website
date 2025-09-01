@@ -37,32 +37,12 @@ const Header: React.FC<HeaderProps> = ({ currentPage, onNavigate }) => {
     }`}>
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <div 
-            className="flex items-center space-x-2 cursor-pointer"
+          {/* Brand: combined complete logo */}
+          <div
+            className="flex items-center space-x-3 cursor-pointer"
             onClick={() => handleNavClick('home')}
           >
-            <div className="relative w-10 h-10">
-              <svg viewBox="0 0 40 40" className="w-full h-full">
-                {/* Sun */}
-                <circle cx="20" cy="12" r="8" fill="#F7C948" />
-                <path d="M20 2 L20 6 M30 12 L26 12 M28 6 L25 9 M12 6 L15 9 M10 12 L14 12 M12 18 L15 15 M28 18 L25 15" 
-                      stroke="#F7C948" strokeWidth="2" strokeLinecap="round" />
-                {/* Solar Panel */}
-                <rect x="8" y="22" width="24" height="16" rx="2" fill="#173B63" />
-                <g stroke="#E6F2FF" strokeWidth="1">
-                  <line x1="14" y1="22" x2="14" y2="38" />
-                  <line x1="20" y1="22" x2="20" y2="38" />
-                  <line x1="26" y1="22" x2="26" y2="38" />
-                  <line x1="8" y1="28" x2="32" y2="28" />
-                  <line x1="8" y1="32" x2="32" y2="32" />
-                </g>
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-[#173B63]">SUNSHINE</h1>
-              <p className="text-sm font-semibold text-[#173B63] -mt-1">POWER</p>
-            </div>
+            <img src="/Complete-Logo.jpg" alt="Sunshine Power" className="h-14 w-auto object-contain" />
           </div>
 
           {/* Desktop Navigation */}

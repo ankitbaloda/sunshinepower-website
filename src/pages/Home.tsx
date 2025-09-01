@@ -21,7 +21,6 @@ const Home: React.FC<HomeProps> = ({ onNavigate }) => {
   return (
     <>
       <SEO 
-        title="Rooftop Solar Installation in Jaipur"
         description="Leading solar power company in Jaipur. Get rooftop solar installation, maintenance, and government subsidy assistance. Free consultation available."
         canonical="https://sunshinepower.net.in"
       />
