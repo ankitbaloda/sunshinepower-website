@@ -1,0 +1,13 @@
+# Netlify redirects and rewrites
+
+# SPA fallback
+/*    /index.html   200
+
+# Form submission
+/contact  /thank-you  302  form-submission
+
+# Clean URLs
+/home  /  301!
+/services/  /services  301!
+/about/  /about  301!
+/contact/  /contact  301!
