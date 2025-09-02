@@ -15,7 +15,7 @@ const About: React.FC = () => {
   name: 'Vikash',
   role: 'Founder & CEO',
   experience: 'Renewable energy professional',
-  image: '/images/Vikash.jpg'
+  image: '/images/Vikash working/Vikash Working 1.png'
     },
     {
   name: 'Mamta',
@@ -82,13 +82,20 @@ const About: React.FC = () => {
                 
                 <div className="relative">
                   <img
-                    src="/images/solar-plates/solar3.png"
-                    alt="Solar installation team at work"
+                    src="/images/Vikash working/Vikash Working 3.png"
+                    alt="Vikash and team on installation"
                     className="rounded-2xl shadow-2xl"
                   />
                   <div className="absolute -bottom-6 -left-6 bg-[#F7C948] text-[#173B63] p-4 rounded-2xl shadow-lg">
                     <p className="font-bold text-lg">Trusted Excellence</p>
                     <p className="text-sm">Quality & Support</p>
+                  </div>
+
+                  {/* Small team/gallery preview */}
+                  <div className="absolute top-4 right-4 grid grid-cols-3 gap-2">
+                    <img src="/images/Vikash working/Vikash Working 1.png" alt="Vikash working 1" className="w-20 h-12 object-cover rounded" />
+                    <img src="/images/Vikash working/Vikash Working 2.png" alt="Vikash working 2" className="w-20 h-12 object-cover rounded" />
+                    <img src="/images/Vikash working/Vikash Working 4.png" alt="Vikash working 4" className="w-20 h-12 object-cover rounded" />
                   </div>
                 </div>
               </div>

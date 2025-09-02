@@ -76,21 +76,7 @@ const Process: React.FC = () => {
           ))}
         </div>
 
-        {/* Timeline for Mobile */}
-        <div className="lg:hidden mt-12">
-          <div className="flex flex-col space-y-4">
-            {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center">
-                <div className="flex-shrink-0 w-8 h-8 bg-[#F7C948] rounded-full flex items-center justify-center text-[#173B63] font-bold text-sm">
-                  {step.id}
-                </div>
-                {index < steps.length - 1 && (
-                  <div className="flex-1 h-0.5 bg-gradient-to-r from-[#F7C948] to-gray-200 ml-4"></div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+  {/* Mobile timeline removed to simplify mobile UI (numbers and connecting lines) */}
       </div>
     </section>
   );
