@@ -2,87 +2,77 @@
 const crypto = require("crypto");
 
 function invertIV(ivBuf) {
-  // WhatsApp requires the IV for the RESPONSE to be "bitwise NOT" of the request IV
   const out = Buffer.from(ivBuf);
   for (let i = 0; i < out.length; i++) out[i] = (~out[i]) & 0xff;
   return out;
 }
-
 function aesAlgoFor(keyBuf) {
-  // Meta may send 16 or 32 byte AES keys. Pick GCM size to match.
   return keyBuf.length === 16 ? "aes-128-gcm" : "aes-256-gcm";
+}
+function b64(s) {
+  return Buffer.from(s, "utf8").toString("base64");
 }
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return { statusCode: 404, body: "Not found" };
+    return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  try {
-    const body = JSON.parse(event.body || "{}");
-    const privPem = (process.env.WA_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-    if (!privPem) throw new Error("Missing WA_PRIVATE_KEY env var");
+  const privPem = (process.env.WA_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  if (!privPem) {
+    return { statusCode: 500, body: "Missing WA_PRIVATE_KEY env var" };
+  }
 
-    // If Meta is doing a plaintext health probe (rare), answer with base64(JSON) and exit.
-    if (!body.encrypted_aes_key || !body.initial_vector) {
-      const plain = Buffer.from(JSON.stringify({ version: "2.0", data: { status: "active" } }), "utf8");
-      return {
-        statusCode: 200,
-        headers: { "content-type": "text/plain" },
-        body: plain.toString("base64"),
-      };
-    }
+  let body = {};
+  try { body = JSON.parse(event.body || "{}"); } catch {}
 
-    // 1) Decrypt AES key using your RSA private key (OAEP SHA-256)
-    const aesKey = crypto.privateDecrypt(
-      {
-        key: privPem,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: "sha256",
-      },
-      Buffer.from(body.encrypted_aes_key, "base64")
-    );
-
-    const iv = Buffer.from(body.initial_vector, "base64");
-    const algo = aesAlgoFor(aesKey);
-
-    // 2) (Optional) Decrypt incoming payload, useful for debugging
-    if (body.encrypted_flow_data) {
-      const enc = Buffer.from(body.encrypted_flow_data, "base64");
-      const tag = enc.slice(enc.length - 16);
-      const data = enc.slice(0, enc.length - 16);
-      const decipher = crypto.createDecipheriv(algo, aesKey, iv);
-      decipher.setAuthTag(tag);
-      const clear = Buffer.concat([decipher.update(data), decipher.final()]);
-      const incoming = JSON.parse(clear.toString("utf8"));
-      console.log("Decrypted request:", incoming);
-      // You can route by incoming.action / incoming.screen / incoming.op here
-    }
-
-    // 3) Build your normal Flow reply payload (any object is fine for health-check)
-    const reply = {
-      version: "2.0",
-      screen: "SERVICE_SUCCESS",
-      data: { status: "ok" }, // add fields your flow expects
-    };
-    const clearReply = Buffer.from(JSON.stringify(reply), "utf8");
-
-    // 4) Encrypt reply with SAME AES key + INVERTED IV (bitwise NOT)
-    const respIV = invertIV(iv);
-    const cipher = crypto.createCipheriv(algo, aesKey, respIV);
-    const enc = Buffer.concat([cipher.update(clearReply), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    const encWithTag = Buffer.concat([enc, tag]);
-    const b64 = encWithTag.toString("base64");
-
-    // 5) Return the Base64 BYTES (no JSON wrapper)
+  // --- Old/plain health probe fallback (no encryption present) ---
+  if (!body.encrypted_aes_key || !body.initial_vector) {
+    // MUST be base64 of {"data":{"status":"active"}}
     return {
       statusCode: 200,
-      headers: { "content-type": "text/plain" },
-      body: b64,
+      headers: { "Content-Type": "text/plain" },
+      body: b64(JSON.stringify({ data: { status: "active" } }))
     };
-  } catch (e) {
-    console.error(e);
-    return { statusCode: 500, body: `Server error: ${e.message}` };
   }
+
+  // --- Decrypt AES key with RSA-OAEP SHA-256 ---
+  const aesKey = crypto.privateDecrypt(
+    { key: privPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+    Buffer.from(body.encrypted_aes_key, "base64")
+  );
+
+  const iv = Buffer.from(body.initial_vector, "base64");
+  const algo = aesAlgoFor(aesKey);
+
+  // --- Decrypt incoming payload (to detect health-check "ping") ---
+  let incoming = {};
+  if (body.encrypted_flow_data) {
+    const enc = Buffer.from(body.encrypted_flow_data, "base64");
+    const tag = enc.slice(-16);
+    const data = enc.slice(0, -16);
+    const dec = crypto.createDecipheriv(algo, aesKey, iv);
+    dec.setAuthTag(tag);
+    const clear = Buffer.concat([dec.update(data), dec.final()]);
+    try { incoming = JSON.parse(clear.toString("utf8") || "{}"); } catch {}
+  }
+
+  // --- HEALTH CHECK RESPONSE (exact shape required) ---
+  if (incoming && (incoming.action === "ping" || incoming.health_check === true)) {
+    const payload = Buffer.from(JSON.stringify({ data: { status: "active" } }), "utf8");
+    const cipher = crypto.createCipheriv(algo, aesKey, invertIV(iv));
+    const enc = Buffer.concat([cipher.update(payload), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const out = Buffer.concat([enc, tag]).toString("base64");
+    return { statusCode: 200, headers: { "Content-Type": "text/plain" }, body: out };
+  }
+
+  // --- NORMAL FLOW REPLY (you can customize later) ---
+  const replyObj = { version: "3.0", screen: "SERVICE_SUCCESS", data: { ticket_id: `SV-${Date.now()}` } };
+  const replyBuf = Buffer.from(JSON.stringify(replyObj), "utf8");
+  const cipher = crypto.createCipheriv(algo, aesKey, invertIV(iv));
+  const enc = Buffer.concat([cipher.update(replyBuf), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const out = Buffer.concat([enc, tag]).toString("base64");
+  return { statusCode: 200, headers: { "Content-Type": "text/plain" }, body: out };
 };
