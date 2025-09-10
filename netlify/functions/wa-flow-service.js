@@ -1,30 +1,29 @@
 // netlify/functions/wa-flow-service.js
 export async function handler(event) {
-  // WhatsApp sends POST; reject others
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   let body = {};
-  try { body = JSON.parse(event.body || '{}'); } catch (e) {}
+  try { body = JSON.parse(event.body || '{}'); } catch {}
 
-  // Health check from WhatsApp
+  // Health check: respond with Base64, not JSON
   if (body && body.action === 'ping') {
+    const payload = JSON.stringify({ data: { status: 'active' } });
+    const b64 = Buffer.from(payload).toString('base64'); // eyJkYXRhIjogeyJzdGF0dXMiOiAiYWN0aXZlIn19
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: { status: 'active' } })
+      headers: { 'Content-Type': 'text/plain' },
+      body: b64
     };
   }
 
-  // Placeholder for real submissions (for now just OK)
+  // (Temporary) also Base64-encode normal replies so the endpoint never errors
+  const resp = { version: '3.0', screen: 'SERVICE_SUCCESS', data: { ticket_id: `SV-${Date.now()}` } };
+  const b64resp = Buffer.from(JSON.stringify(resp)).toString('base64');
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      version: '3.0',
-      screen: 'SERVICE_SUCCESS',
-      data: { ticket_id: `SV-${Date.now()}` }
-    })
+    headers: { 'Content-Type': 'text/plain' },
+    body: b64resp
   };
 }
