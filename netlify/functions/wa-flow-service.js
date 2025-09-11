@@ -52,23 +52,94 @@ exports.handler = async (event) => {
       clear.action === "health_check" ||
       (typeof clear.flow_token === "string" && /random|string|test|placeholder/i.test(clear.flow_token));
 
-  // Robust field extraction across possible shapes
+    // Robust field extraction across possible shapes (handles object, array, nested 'fields')
+    const DEBUG = process.env.WA_FLOW_DEBUG === '1';
+
+    function arrayToObject(arr) {
+      const out = {};
+      for (const entry of arr) {
+        if (!entry) continue;
+        // Accept shapes: { name, value } or { name, selected_option:{ id } }
+        if (entry.name) {
+          if (entry.value !== undefined) out[entry.name] = entry.value;
+          else if (entry.selected_option && entry.selected_option.id) out[entry.name] = entry.selected_option.id;
+          else out[entry.name] = entry; // fallback raw
+        }
+      }
+      return out;
+    }
+
+    function coerceFormCandidate(candidate) {
+      if (!candidate) return null;
+      if (Array.isArray(candidate)) return arrayToObject(candidate);
+      // If has 'fields' key that is array
+      if (Array.isArray(candidate.fields)) return arrayToObject(candidate.fields);
+      return candidate;
+    }
+
     let f = null;
+    const formNames = ['service_form', 'serviceForm'];
     const roots = [clear.fields, clear.data?.fields, clear.data];
     for (const r of roots) {
       if (!r) continue;
-      if (r.service_form && typeof r.service_form === "object") {
-        f = r.service_form;
+      for (const name of formNames) {
+        if (r && r[name]) {
+          f = coerceFormCandidate(r[name]);
+          break;
+        }
+      }
+      if (f) break;
+      // Maybe fields are directly here (flatten if array)
+      if (Array.isArray(r)) {
+        f = arrayToObject(r);
         break;
       }
-      if (r.full_name || r.mobile) { // fields directly here
-        f = r;
+      if (r.full_name || r.mobile || r.address || r.issue_type) {
+        f = coerceFormCandidate(r);
         break;
       }
     }
 
+    // Deep scan fallback: traverse object tree for candidate fields
+    function deepScan(obj, depth = 0) {
+      if (!obj || depth > 6) return null;
+      if (Array.isArray(obj)) {
+        const arrObj = arrayToObject(obj);
+        if (arrObj.full_name || arrObj.mobile) return arrObj;
+        for (const el of obj) {
+          const found = deepScan(el, depth + 1);
+          if (found) return found;
+        }
+        return null;
+      }
+      if (typeof obj === 'object') {
+        if (obj.full_name || obj.mobile) return coerceFormCandidate(obj);
+        for (const k of Object.keys(obj)) {
+          const found = deepScan(obj[k], depth + 1);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    if (!f) f = deepScan(clear);
+
+    if (DEBUG) {
+      try {
+        console.log('[WA_FLOW_DEBUG] decrypted clear payload:', JSON.stringify(clear, null, 2));
+        console.log('[WA_FLOW_DEBUG] data:', JSON.stringify(clear.data, null, 2));
+        console.log('[WA_FLOW_DEBUG] extracted form keys:', f ? Object.keys(f) : null);
+        console.log('[WA_FLOW_DEBUG] raw form object:', JSON.stringify(f, null, 2));
+      } catch(_) {}
+    }
+
     // Unwrap possible { value: "..." } containers
-    const unwrap = (v) => (v && typeof v === "object" && "value" in v && Object.keys(v).length === 1) ? v.value : v;
+    const unwrap = (v) => {
+      if (v && typeof v === 'object') {
+        if ("value" in v && Object.keys(v).length === 1) return v.value; // { value: "..." }
+        if (v && v.selected_option && v.selected_option.id && Object.keys(v).length <= 2) return v.selected_option.id; // dropdown pattern
+      }
+      return v;
+    };
     const fullNameVal = normalizeName(unwrap(f?.full_name));
     const mobileVal = normalizeMobile(unwrap(f?.mobile));
     const addressVal = unwrap(f?.address);
