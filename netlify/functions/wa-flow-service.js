@@ -46,30 +46,43 @@ exports.handler = async (event) => {
     let nextScreen = "SERVICE_SUCCESS";
     let responseData = { ok: true };
 
-      // Detect simulator (Actions tab / health check often sends a placeholder token)
-      const isSimulator =
-        typeof clear.flow_token === "string" &&
-        clear.flow_token.includes("ANY_RANDOM_STRING");
+    // Detect simulator (broader heuristic)
+    const isSimulator =
+      clear.action === "health_check" ||
+      (typeof clear.flow_token === "string" && /random|string|test|placeholder/i.test(clear.flow_token));
 
-      // Robustly extract fields (can be nested under the form name)
-      let f = null;
-      if (clear.fields) {
-        // Newer payloads: fields at top-level
-        f = clear.fields.service_form || clear.fields;
-      } else if (clear.data && clear.data.fields) {
-        // Some payloads include fields under data.fields
-        f = clear.data.fields.service_form || clear.data.fields;
+    // Robust field extraction across possible shapes
+    let f = null;
+    const roots = [clear.fields, clear.data?.fields, clear.data];
+    for (const r of roots) {
+      if (!r) continue;
+      if (r.service_form && typeof r.service_form === "object") {
+        f = r.service_form;
+        break;
       }
+      if (r.full_name || r.mobile) { // fields directly here
+        f = r;
+        break;
+      }
+    }
 
-      // Validate only for real submissions (not simulator)
-      if (clear.action === "data_exchange" &&
-          clear.data?.op === "submit_service_form" &&
-          !isSimulator) {
-        if (!f?.full_name || !f?.mobile) {
-          nextScreen = "BOOK_SERVICE";
-          responseData = { ok: false, error: "missing_required_fields" };
-        }
+    // Unwrap possible { value: "..." } containers
+    const unwrap = (v) => (v && typeof v === "object" && "value" in v && Object.keys(v).length === 1) ? v.value : v;
+    const fullNameVal = unwrap(f?.full_name);
+    const mobileVal = unwrap(f?.mobile);
+
+    // Debug (remove or comment out after confirming structure)
+    // console.log("DEBUG submission extraction", { isSimulator, hasF: !!f, keys: f ? Object.keys(f) : null, fullNameVal, mobileVal });
+
+    // Validate only for real final submissions
+    if (clear.action === "data_exchange" &&
+        clear.data?.op === "submit_service_form" &&
+        !isSimulator) {
+      if (!fullNameVal || !mobileVal) {
+        nextScreen = "BOOK_SERVICE";
+        responseData = { ok: false, error: "missing_required_fields" };
       }
+    }
 
     const responseJson = { version: "3.0", screen: nextScreen, data: responseData };
 
