@@ -1,5 +1,6 @@
 // netlify/functions/wa-flow-service.js
 const { decryptFlowRequestBody, encryptFlowResponseBody } = require("../lib/waCrypto");
+const { persistServiceSubmission } = require("../lib/persist");
 
 exports.handler = async (event) => {
   try {
@@ -71,8 +72,21 @@ exports.handler = async (event) => {
     const fullNameVal = unwrap(f?.full_name);
     const mobileVal = unwrap(f?.mobile);
 
-    // Debug (remove or comment out after confirming structure)
-    // console.log("DEBUG submission extraction", { isSimulator, hasF: !!f, keys: f ? Object.keys(f) : null, fullNameVal, mobileVal });
+    // Build a normalized submission object (only when we have some data) for persistence
+    const submissionPayload = (f && (fullNameVal || mobileVal)) ? {
+      full_name: fullNameVal || null,
+      mobile: mobileVal || null,
+      address: unwrap(f?.address),
+      village: unwrap(f?.village),
+      issue_type: unwrap(f?.issue_type),
+      urgency: unwrap(f?.urgency),
+      preferred_date: unwrap(f?.preferred_date),
+      flow_screen: clear.screen,
+      op: clear.data?.op,
+      action: clear.action,
+      received_at: new Date().toISOString(),
+      simulator: isSimulator,
+    } : null;
 
     // Validate only for real final submissions
     if (clear.action === "data_exchange" &&
@@ -81,6 +95,9 @@ exports.handler = async (event) => {
       if (!fullNameVal || !mobileVal) {
         nextScreen = "BOOK_SERVICE";
         responseData = { ok: false, error: "missing_required_fields" };
+      } else if (submissionPayload) {
+        // Fire and forget persistence (do not await; keep latency low)
+        persistServiceSubmission({ type: "service_form", ...submissionPayload });
       }
     }
 
