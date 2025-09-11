@@ -100,6 +100,23 @@ exports.handler = async (event) => {
       }
     }
 
+    // Additional extraction: form_responses array pattern
+    if (!f && clear.data && Array.isArray(clear.data.form_responses)) {
+      try {
+        for (const fr of clear.data.form_responses) {
+          if (!fr) continue;
+          if (fr.name === 'service_form' && Array.isArray(fr.fields)) { // preferred match
+            f = arrayToObject(fr.fields);
+            break;
+          }
+          if (Array.isArray(fr.fields)) {
+            const candidate = arrayToObject(fr.fields);
+            if (candidate.full_name || candidate.mobile) { f = candidate; break; }
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
     // Deep scan fallback: traverse object tree for candidate fields
     function deepScan(obj, depth = 0) {
       if (!obj || depth > 6) return null;
@@ -136,7 +153,8 @@ exports.handler = async (event) => {
     const unwrap = (v) => {
       if (v && typeof v === 'object') {
         if ("value" in v && Object.keys(v).length === 1) return v.value; // { value: "..." }
-        if (v && v.selected_option && v.selected_option.id && Object.keys(v).length <= 2) return v.selected_option.id; // dropdown pattern
+        if (v.selected_option?.id) return v.selected_option.id; // dropdown pattern
+        if (Array.isArray(v.values) && v.values.length === 1) return v.values[0]; // { values: ["single"] }
       }
       return v;
     };
@@ -184,7 +202,7 @@ exports.handler = async (event) => {
     if (clear.action === "data_exchange" &&
         clear.data?.op === "submit_service_form" &&
         !isSimulator) {
-      // Strict validation of all required fields
+      // Strict required list (current form fields)
       const missing = [];
       if (!fullNameVal) missing.push("full_name");
       if (!mobileVal) missing.push("mobile");
@@ -194,9 +212,16 @@ exports.handler = async (event) => {
       if (!urgencyVal) missing.push("urgency");
       if (!preferredDateVal) missing.push("preferred_date");
 
+      const RELAX = process.env.WA_FLOW_RELAX_VALIDATION === '1';
       if (missing.length) {
-        nextScreen = "BOOK_SERVICE";
-        responseData = { ok: false, error: "missing_required_fields", missing };
+        if (RELAX) {
+          // Allow progression but flag partial
+            responseData = { ok: true, partial: true, missing };
+            nextScreen = "SERVICE_SUCCESS"; // proceed anyway
+        } else {
+          nextScreen = "BOOK_SERVICE";
+          responseData = { ok: false, error: "missing_required_fields", missing };
+        }
       } else if (submissionPayload) {
         // Fire & forget with retry (do not await full completion to avoid latency)
         persistServiceSubmission({ type: "service_form", ...submissionPayload });
