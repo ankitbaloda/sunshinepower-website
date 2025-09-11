@@ -52,7 +52,7 @@ exports.handler = async (event) => {
       clear.action === "health_check" ||
       (typeof clear.flow_token === "string" && /random|string|test|placeholder/i.test(clear.flow_token));
 
-    // Robust field extraction across possible shapes
+  // Robust field extraction across possible shapes
     let f = null;
     const roots = [clear.fields, clear.data?.fields, clear.data];
     for (const r of roots) {
@@ -69,21 +69,42 @@ exports.handler = async (event) => {
 
     // Unwrap possible { value: "..." } containers
     const unwrap = (v) => (v && typeof v === "object" && "value" in v && Object.keys(v).length === 1) ? v.value : v;
-    const fullNameVal = unwrap(f?.full_name);
-    const mobileVal = unwrap(f?.mobile);
+    const fullNameVal = normalizeName(unwrap(f?.full_name));
+    const mobileVal = normalizeMobile(unwrap(f?.mobile));
+    const addressVal = unwrap(f?.address);
+    const villageVal = unwrap(f?.village);
+    const issueTypeVal = unwrap(f?.issue_type);
+    const urgencyVal = unwrap(f?.urgency);
+    const preferredDateVal = unwrap(f?.preferred_date);
+
+    // Map issue_type id -> Hindi label (keep same if unknown)
+    const ISSUE_TYPE_LABELS_HI = {
+      no_generation_problem: "उत्पादन/बिजली बंद",
+      solar_plate_problem: "सोलर प्लेट समस्या",
+      net_metering_problem: "नेट मीटर समस्या",
+      app_problem: "ऐप समस्या",
+      inverter_problem: "इनवर्टर समस्या",
+      wiring_problem: "वायरिंग समस्या",
+      earthing_problem: "अर्थिंग समस्या",
+      other_problem: "अन्य समस्या",
+    };
+    const issueTypeLabelHi = issueTypeVal ? ISSUE_TYPE_LABELS_HI[issueTypeVal] || issueTypeVal : null;
 
     // Build a normalized submission object (only when we have some data) for persistence
     const submissionPayload = (f && (fullNameVal || mobileVal)) ? {
       full_name: fullNameVal || null,
       mobile: mobileVal || null,
-      address: unwrap(f?.address),
-      village: unwrap(f?.village),
-      issue_type: unwrap(f?.issue_type),
-      urgency: unwrap(f?.urgency),
-      preferred_date: unwrap(f?.preferred_date),
+      address: addressVal,
+      village: villageVal,
+      issue_type: issueTypeVal,
+      issue_type_label_hi: issueTypeLabelHi,
+      urgency: urgencyVal,
+      preferred_date: preferredDateVal,
       flow_screen: clear.screen,
       op: clear.data?.op,
       action: clear.action,
+      flow_version: clear.version || null,
+      data_api_version: clear.data_api_version || null,
       received_at: new Date().toISOString(),
       simulator: isSimulator,
     } : null;
@@ -92,13 +113,40 @@ exports.handler = async (event) => {
     if (clear.action === "data_exchange" &&
         clear.data?.op === "submit_service_form" &&
         !isSimulator) {
-      if (!fullNameVal || !mobileVal) {
+      // Strict validation of all required fields
+      const missing = [];
+      if (!fullNameVal) missing.push("full_name");
+      if (!mobileVal) missing.push("mobile");
+      if (!addressVal) missing.push("address");
+      if (!villageVal) missing.push("village");
+      if (!issueTypeVal) missing.push("issue_type");
+      if (!urgencyVal) missing.push("urgency");
+      if (!preferredDateVal) missing.push("preferred_date");
+
+      if (missing.length) {
         nextScreen = "BOOK_SERVICE";
-        responseData = { ok: false, error: "missing_required_fields" };
+        responseData = { ok: false, error: "missing_required_fields", missing };
       } else if (submissionPayload) {
-        // Fire and forget persistence (do not await; keep latency low)
+        // Fire & forget with retry (do not await full completion to avoid latency)
         persistServiceSubmission({ type: "service_form", ...submissionPayload });
       }
+    }
+
+    function normalizeMobile(raw) {
+      if (!raw || typeof raw !== "string") return null;
+      // Remove spaces, dashes, parentheses
+      let v = raw.replace(/[\s\-()]/g, "");
+      // Remove leading +91 or 0 if present
+      v = v.replace(/^\+?91/, "").replace(/^0+/, "");
+      // Accept only 10 digit final
+      if (!/^\d{10}$/.test(v)) return null;
+      return "+91" + v; // store normalized in +91XXXXXXXXXX format
+    }
+
+    function normalizeName(n) {
+      if (!n || typeof n !== "string") return null;
+      const trimmed = n.trim();
+      return trimmed.length ? trimmed : null;
     }
 
     const responseJson = { version: "3.0", screen: nextScreen, data: responseData };
