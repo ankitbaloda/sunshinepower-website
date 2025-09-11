@@ -46,15 +46,30 @@ exports.handler = async (event) => {
     let nextScreen = "SERVICE_SUCCESS";
     let responseData = { ok: true };
 
-    // Example: basic validation for a submit op
-    if (clear.action === "data_exchange" && clear.data && clear.data.op === "submit_service_form") {
-      const f = clear.data.fields || clear.data; // depending on your form binding
-      // Add light validation if you want:
-      if (!f || !f.full_name || !f.mobile) {
-        nextScreen = "BOOK_SERVICE";
-        responseData = { ok: false, error: "missing_required_fields" };
+      // Detect simulator (Actions tab / health check often sends a placeholder token)
+      const isSimulator =
+        typeof clear.flow_token === "string" &&
+        clear.flow_token.includes("ANY_RANDOM_STRING");
+
+      // Robustly extract fields (can be nested under the form name)
+      let f = null;
+      if (clear.fields) {
+        // Newer payloads: fields at top-level
+        f = clear.fields.service_form || clear.fields;
+      } else if (clear.data && clear.data.fields) {
+        // Some payloads include fields under data.fields
+        f = clear.data.fields.service_form || clear.data.fields;
       }
-    }
+
+      // Validate only for real submissions (not simulator)
+      if (clear.action === "data_exchange" &&
+          clear.data?.op === "submit_service_form" &&
+          !isSimulator) {
+        if (!f?.full_name || !f?.mobile) {
+          nextScreen = "BOOK_SERVICE";
+          responseData = { ok: false, error: "missing_required_fields" };
+        }
+      }
 
     const responseJson = { version: "3.0", screen: nextScreen, data: responseData };
 
