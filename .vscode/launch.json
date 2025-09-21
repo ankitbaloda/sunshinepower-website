@@ -1,31 +1,26 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "node",
+            "command": "npm run dev",
+            "name": "Launch Development Server",
             "request": "launch",
-            "name": "Run semver",
-            "runtimeExecutable": "semver",
-            "cwd": "${workspaceFolder}/node_modules/@typescript-eslint/typescript-estree",
-            "args": []
+            "type": "node-terminal",
+            "cwd": "${workspaceFolder}"
         },
         {
-            "command": "npm start",
-            "name": "Run npm start",
+            "command": "npm run build",
+            "name": "Build Production",
             "request": "launch",
-            "type": "node-terminal"
+            "type": "node-terminal",
+            "cwd": "${workspaceFolder}"
         },
         {
-            "type": "node",
+            "command": "npm run preview",
+            "name": "Preview Production Build",
             "request": "launch",
-            "name": "Launch Program",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "program": "${file}"
+            "type": "node-terminal",
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

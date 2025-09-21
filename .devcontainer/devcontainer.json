@@ -1,0 +1,67 @@
+{
+  "name": "Sunshine Power Website Development",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-20-bullseye",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "typescript.preferences.quoteStyle": "single",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "emmet.includeLanguages": {
+          "typescript": "html",
+          "typescriptreact": "html"
+        },
+        "files.exclude": {
+          "**/node_modules": true,
+          "**/dist": true,
+          "**/.git": true
+        }
+      },
+      
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-typescript-next",
+        "formulahendry.auto-rename-tag",
+        "christian-kohler.path-intellisense",
+        "ms-vscode.vscode-json",
+        "ms-vscode.live-server",
+        "ritwickdey.LiveServer",
+        "ms-playwright.playwright"
+      ]
+    }
+  },
+
+  "forwardPorts": [5173, 4173],
+  
+  "portsAttributes": {
+    "5173": {
+      "label": "Development Server",
+      "onAutoForward": "notify"
+    },
+    "4173": {
+      "label": "Preview Server", 
+      "onAutoForward": "silent"
+    }
+  },
+
+  "postCreateCommand": "npm install && ./.devcontainer/welcome.sh",
+
+  "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+
+  "remoteUser": "node",
+
+  "containerEnv": {
+    "NODE_ENV": "development"
+  }
+}

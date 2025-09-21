@@ -1,0 +1,68 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "npm",
+            "script": "dev",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "label": "npm: dev",
+            "detail": "Start development server",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "build",
+            "group": "build",
+            "label": "npm: build",
+            "detail": "Build for production",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$tsc"
+            ]
+        },
+        {
+            "type": "npm",
+            "script": "lint",
+            "group": "test",
+            "label": "npm: lint",
+            "detail": "Run ESLint",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": [
+                "$eslint-stylish"
+            ]
+        },
+        {
+            "type": "npm",
+            "script": "preview",
+            "group": "build",
+            "label": "npm: preview",
+            "detail": "Preview production build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ]
+}
