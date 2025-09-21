@@ -2,6 +2,9 @@
 const { decryptFlowRequestBody, encryptFlowResponseBody } = require("../lib/waCrypto");
 const { persistServiceSubmission } = require("../lib/persist");
 
+// One-time log guard per function instance
+let __LOGGED_ONCE__ = false;
+
 exports.handler = async (event) => {
   try {
     if (event.httpMethod !== "POST") {
@@ -17,6 +20,23 @@ exports.handler = async (event) => {
     // 1) Decrypt incoming payload from Meta (Flows Data API v3.0)
     const { clear, aesKey, ivBuf } = decryptFlowRequestBody(event.body, PRIVATE_KEY);
     // Example 'clear': { version:"3.0", action:"data_exchange"|"health_check", screen:"BOOK_SERVICE", data:{...}, flow_token:"..." }
+
+    // One-time diagnostic logs to confirm decrypted payload and field keys
+    const msg = clear;
+    if (!__LOGGED_ONCE__) {
+      try {
+        console.log('RAW_DECRYPTED:', JSON.stringify(msg, null, 2));
+        console.log('FIELDS_KEYS:', Object.keys(
+          msg?.data?.fields ||
+          msg?.payload?.fields ||
+          msg?.fields ||
+          msg?.data?.service_form ||
+          msg?.service_form ||
+          {}
+        ));
+      } catch (_) {}
+      __LOGGED_ONCE__ = true;
+    }
 
     // 1.1) Health Check handling — must reply with exactly { data: { status: 'active' } }
     const opCandidate =
