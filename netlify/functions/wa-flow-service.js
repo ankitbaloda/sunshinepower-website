@@ -116,7 +116,10 @@ function encryptResponse(obj, requestEnvelope, rsaPrivateKeyPem, reusedKeyBuf) {
   let keyBuf = reusedKeyBuf;
   if (!keyBuf) {
     const ekBuf = pick(requestEnvelope, ['encrypted_aes_key', 'ek', 'aes_key_b64'], { b64: true });
-    if (!ekBuf) throw new Error('Cannot re-unwrap AES key: no encrypted key in request envelope');
+    if (!ekBuf) {
+      // No AES key present (preview/Actions) → throw so caller can fallback to plain JSON
+      throw new Error('No AES key in request');
+    }
     keyBuf = rsaUnwrapAESKey(ekBuf, rsaPrivateKeyPem);
   }
 
@@ -136,13 +139,25 @@ function encryptResponse(obj, requestEnvelope, rsaPrivateKeyPem, reusedKeyBuf) {
  * Convenience: build a proper Netlify 200 with base64 body.
  */
 function encrypted200(obj, requestEnvelope, rsaPrivateKeyPem, keyBuf) {
-  const bodyB64 = encryptResponse(obj, requestEnvelope, rsaPrivateKeyPem, keyBuf);
-  return {
-    statusCode: 200,
-    isBase64Encoded: true,
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: bodyB64
-  };
+  try {
+    // Try proper AES-GCM encryption using the session key from the request
+    const bodyB64 = encryptResponse(obj, requestEnvelope, rsaPrivateKeyPem, keyBuf);
+    return {
+      statusCode: 200,
+      isBase64Encoded: true,
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bodyB64
+    };
+  } catch (e) {
+    // Fallback: Preview/Actions often send plain JSON without AES key.
+    // Return normal JSON so we don't 502. The Builder may show "could not decrypt" — that's OK in preview.
+    console.warn('encrypted200 fallback (no AES key):', e.message);
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj)
+    };
+  }
 }
 
 /**
