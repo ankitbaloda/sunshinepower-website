@@ -18,6 +18,31 @@ exports.handler = async (event) => {
     const { clear, aesKey, ivBuf } = decryptFlowRequestBody(event.body, PRIVATE_KEY);
     // Example 'clear': { version:"3.0", action:"data_exchange"|"health_check", screen:"BOOK_SERVICE", data:{...}, flow_token:"..." }
 
+    // 1.1) Health Check handling — must reply with exactly { data: { status: 'active' } }
+    const opCandidate =
+      (clear && (clear.payload && clear.payload.op)) ||
+      (clear && clear.data && clear.data.op) ||
+      (clear && clear.op) ||
+      null;
+
+    const isHealthCheck =
+      opCandidate === 'health_check' ||
+      clear?.action === 'health_check' ||
+      clear?.event === 'HEALTH_CHECK' ||
+      clear?.type === 'HEALTH_CHECK' ||
+      // Minimal envelope: nothing actionable
+      (!opCandidate && !clear?.screen && !clear?.fields && !clear?.data?.op);
+
+    if (isHealthCheck) {
+      const healthPayload = { data: { status: 'active' } };
+      const encryptedHealth = encryptFlowResponseBody(healthPayload, aesKey, ivBuf);
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'text/plain' },
+        body: encryptedHealth,
+      };
+    }
+
     // 2) (Optional) forward raw data to Make.com (if you set MAKE_WEBHOOK_URL)
     try {
       const hook = process.env.MAKE_WEBHOOK_URL;
