@@ -1,205 +1,345 @@
 // netlify/functions/wa-flow-service.js
-// Drop-in, no-npm Node.js crypto helper for WhatsApp Flows v3.0
-// Implements RSA-OAEP(SHA-256) unwrap + AES-256-GCM payload decrypt/encrypt
+const { decryptFlowRequestBody, encryptFlowResponseBody } = require("../lib/waCrypto");
+const { persistServiceSubmission } = require("../lib/persist");
 
-const crypto = require('crypto');
-
-// Pretty log head helper
-const head = (s, n = 200) => (s || '').slice(0, n);
-
-// Try to parse Base64(JSON) else plain JSON → object | null
-function parsePossiblyBase64JSON(body) {
-  let txt = body;
-  try { txt = Buffer.from(body, 'base64').toString('utf8'); } catch (_) {}
-  try { return JSON.parse(txt); } catch (_) { return null; }
-}
-
-// Walk recursively all sub-objects
-function* walk(o) {
-  if (o && typeof o === 'object') {
-    yield o;
-    for (const k of Object.keys(o)) yield* walk(o[k]);
-  }
-}
-
-// Find crypto envelope by shape: 4 base64 strings matching ek/iv/tag/ct sizes
-function findCryptoEnvelope(obj) {
-  for (const sub of walk(obj)) {
-    const b64Strings = Object.entries(sub).filter(([, v]) => typeof v === 'string' && /^[A-Za-z0-9+/=]+$/.test(v) && v.length >= 8);
-    for (let i = 0; i < b64Strings.length; i++) {
-      for (let j = 0; j < b64Strings.length; j++) {
-        if (j === i) continue;
-        for (let k = 0; k < b64Strings.length; k++) {
-          if (k === i || k === j) continue;
-          for (let m = 0; m < b64Strings.length; m++) {
-            if (m === i || m === j || m === k) continue;
-            const ekRaw = b64Strings[i][1], ivRaw = b64Strings[j][1], tagRaw = b64Strings[k][1], ctRaw = b64Strings[m][1];
-            try {
-              const ek = Buffer.from(ekRaw, 'base64');
-              const iv = Buffer.from(ivRaw, 'base64');
-              const tag = Buffer.from(tagRaw, 'base64');
-              const ct = Buffer.from(ctRaw, 'base64');
-              const looksEK = ek.length >= 128;
-              const looksIV = iv.length === 12;
-              const looksTAG = tag.length === 16;
-              const looksCT = ct.length >= 16;
-              if (looksEK && looksIV && looksTAG && looksCT) {
-                return { ekKey: b64Strings[i][0], ekB64: ekRaw, ivKey: b64Strings[j][0], ivB64: ivRaw, tagKey: b64Strings[k][0], tagB64: tagRaw, ctKey: b64Strings[m][0], ctB64: ctRaw, node: sub };
-              }
-            } catch (_) {}
-          }
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function rsaUnwrap(encryptedKeyB64, rsaPrivateKeyPem) {
-  const encKey = Buffer.from(encryptedKeyB64, 'base64');
-  return crypto.privateDecrypt(
-    { key: rsaPrivateKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-    encKey
-  );
-}
-
-function aesGcmDecrypt(keyBuf, ivB64, ctB64, tagB64) {
-  const iv = Buffer.from(ivB64, 'base64');
-  const ct = Buffer.from(ctB64, 'base64');
-  const tag = Buffer.from(tagB64, 'base64');
-  const dec = crypto.createDecipheriv('aes-256-gcm', keyBuf, iv);
-  dec.setAuthTag(tag);
-  return Buffer.concat([dec.update(ct), dec.final()]);
-}
-
-function aesGcmEncrypt(keyBuf, jsonString) {
-  const iv = crypto.randomBytes(12);
-  const enc = crypto.createCipheriv('aes-256-gcm', keyBuf, iv);
-  const ct = Buffer.concat([enc.update(Buffer.from(jsonString, 'utf8')), enc.final()]);
-  const tag = enc.getAuthTag();
-  return { iv: iv.toString('base64'), ciphertext: ct.toString('base64'), tag: tag.toString('base64') };
-}
-
-// Decrypt incoming event.body → { msg, keyBuf, rawObj, cryptoNode }
-function decryptPayload(eventBody, rsaPrivateKeyPem) {
-  console.log('[flows] body(head)=', head(eventBody));
-  const rawObj = parsePossiblyBase64JSON(eventBody);
-  if (!rawObj) {
-    console.warn('[flows] body not JSON / not base64(JSON). Preview-like.');
-    return { msg: null, keyBuf: null, rawObj: null, cryptoNode: null, previewLike: true };
-  }
-  const env = findCryptoEnvelope(rawObj);
-  if (!env) {
-    console.log('[flows] no crypto envelope found. Keys at root=', Object.keys(rawObj));
-    return { msg: rawObj, keyBuf: null, rawObj, cryptoNode: null, previewLike: true };
-  }
-  console.log('[flows] crypto keys found:', env.ekKey, env.ivKey, env.tagKey, env.ctKey);
-  const aesKey = rsaUnwrap(env.ekB64, rsaPrivateKeyPem);
-  const plain = aesGcmDecrypt(aesKey, env.ivB64, env.ctB64, env.tagB64);
-  const msg = JSON.parse(plain.toString('utf8'));
-  return { msg, keyBuf: aesKey, rawObj, cryptoNode: env };
-}
-
-// Encrypt response using SAME AES key
-function encryptResponse(obj, rawObj, keyBuf) {
-  if (!keyBuf) throw new Error('No AES key available to encrypt response');
-  const env = aesGcmEncrypt(keyBuf, JSON.stringify(obj));
-  return Buffer.from(JSON.stringify(env), 'utf8').toString('base64');
-}
-
-// Try encryption; fallback to JSON on preview
-function encrypted200(obj, rawObj, keyBuf) {
-  try {
-    const b64 = encryptResponse(obj, rawObj, keyBuf);
-    return { statusCode: 200, isBase64Encoded: true, headers: { 'Content-Type': 'application/octet-stream' }, body: b64 };
-  } catch (e) {
-    console.warn('[flows] encrypted200 fallback:', e.message);
-    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) };
-  }
-}
-
-/**
- * Very simple detector for health-check / preview packets.
- */
-function isHealthCheckMessage(m) {
-  const op = m?.payload?.op || m?.data?.op || m?.op || null;
-  return (
-    op === 'health_check' ||
-    m?.event === 'HEALTH_CHECK' ||
-    m?.type === 'HEALTH_CHECK' ||
-    (!op && !m?.screen && !m?.fields && !m?.data?.fields)
-  );
-}
-// ===== End helpers =====
-
-const log = (...args) => console.log('[wa-flow-service]', ...args);
+// One-time log guard per function instance
+let __LOGGED_ONCE__ = false;
 
 exports.handler = async (event) => {
-  // Optional: GET ping
-  if (event.httpMethod === 'GET') {
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ok: true, now: new Date().toISOString() })
-    };
-  }
-  if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
-
-  let dec, msg, aesKey, rawObj;
   try {
-    dec = decryptPayload(event.body, process.env.WA_PRIVATE_KEY);
-    msg = dec.msg;                 // decrypted object (or preview JSON)
-    aesKey = dec.keyBuf;           // Buffer(32) if real request; null if preview/health
-    rawObj = dec.rawObj;           // original raw object (for context/logs)
-  } catch (e) {
-    console.error('[flows] decrypt error:', e);
-    return { statusCode: 400, body: 'Bad Request' };
-  }
+    if (event.httpMethod !== "POST") {
+      return { statusCode: 405, body: "Method Not Allowed" };
+    }
 
-  // Health check → EXACT payload expected by WhatsApp
-  if (isHealthCheckMessage(msg)) {
-    return encrypted200({ data: { status: 'active' } }, rawObj, aesKey);
-  }
+    const PRIVATE_KEY = process.env.WA_PRIVATE_KEY;
+    if (!PRIVATE_KEY) {
+      console.error("WA_PRIVATE_KEY is not set");
+      return { statusCode: 500, body: "Server not configured" };
+    }
 
-  // Your op routing
-  const op = msg?.payload?.op || msg?.data?.op || msg?.op || null;
+    // 1) Decrypt incoming payload from Meta (Flows Data API v3.0)
+    const { clear, aesKey, ivBuf } = decryptFlowRequestBody(event.body, PRIVATE_KEY);
+    // Example 'clear': { version:"3.0", action:"data_exchange"|"health_check", screen:"BOOK_SERVICE", data:{...}, flow_token:"..." }
 
-  // Extract fields tolerantly (depends on your Form name & client)
-  const fields =
-    msg?.data?.fields ||
-    msg?.payload?.fields ||
-    msg?.fields ||
-    msg?.data?.service_form ||
-    msg?.service_form ||
-    {};
+    // One-time diagnostic logs to confirm decrypted payload and field keys
+    const msg = clear;
+    if (!__LOGGED_ONCE__) {
+      try {
+        console.log('RAW_DECRYPTED:', JSON.stringify(msg, null, 2));
+        console.log('FIELDS_KEYS:', Object.keys(
+          msg?.data?.fields ||
+          msg?.payload?.fields ||
+          msg?.fields ||
+          msg?.data?.service_form ||
+          msg?.service_form ||
+          {}
+        ));
+      } catch (_) {}
+      __LOGGED_ONCE__ = true;
+    }
 
-  const required = ['full_name','mobile','address','village','issue_type','urgency','preferred_date'];
-  const missing = required.filter(k => !fields?.[k]);
+    // 1.1) Health Check handling — must reply with exactly { data: { status: 'active' } }
+    const opCandidate =
+      (clear && (clear.payload && clear.payload.op)) ||
+      (clear && clear.data && clear.data.op) ||
+      (clear && clear.op) ||
+      null;
 
-  if (op === 'submit_service_form' && missing.length === 0) {
-    // Forward to Make (optional)
+    const isHealthCheck =
+      opCandidate === 'health_check' ||
+      clear?.action === 'health_check' ||
+      clear?.event === 'HEALTH_CHECK' ||
+      clear?.type === 'HEALTH_CHECK' ||
+      // Minimal envelope: nothing actionable
+      (!opCandidate && !clear?.screen && !clear?.fields && !clear?.data?.op);
+
+    if (isHealthCheck) {
+      const healthPayload = { data: { status: 'active' } };
+      const encryptedHealth = encryptFlowResponseBody(healthPayload, aesKey, ivBuf);
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'text/plain' },
+        body: encryptedHealth,
+      };
+    }
+
+    // 2) (Optional) forward raw data to Make.com (if you set MAKE_WEBHOOK_URL)
     try {
-      if (process.env.MAKE_WEBHOOK_URL) {
-        await fetch(process.env.MAKE_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+      const hook = process.env.MAKE_WEBHOOK_URL;
+      if (hook) {
+        await fetch(hook, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            source: 'wa-flow',
-            fields,
-            received_at: new Date().toISOString()
-          })
+            source: "wa-flow",
+            received_at: new Date().toISOString(),
+            meta: {
+              action: clear.action,
+              screen: clear.screen,
+              version: clear.version,
+            },
+            fields: clear.data || null,
+            incoming_raw: clear,
+          }),
         });
       }
     } catch (e) {
-      console.error('Forward to Make failed:', e.message);
-      // UX is independent of Make
+      console.warn("Make.com forward failed (continuing):", e.message);
     }
 
-    // Reply with screen transition (must be encrypted with same session key)
-    return encrypted200({ version: '3.0', screen: 'SERVICE_SUCCESS', data: { ok: true } }, rawObj, aesKey);
+  // 3) Build response JSON expected by Flows
+  //    You can decide next screen based on validation/business logic.
+    let nextScreen = "SERVICE_SUCCESS";
+    let responseData = { ok: true };
+
+    // Detect simulator (broader heuristic)
+    const isSimulator =
+      clear.action === "health_check" ||
+      (typeof clear.flow_token === "string" && /random|string|test|placeholder/i.test(clear.flow_token));
+
+    // Robust field extraction across possible shapes (handles object, array, nested 'fields')
+    const DEBUG = process.env.WA_FLOW_DEBUG === '1';
+
+    function arrayToObject(arr) {
+      const out = {};
+      for (const entry of arr) {
+        if (!entry) continue;
+        // Accept shapes: { name, value } or { name, selected_option:{ id } }
+        if (entry.name) {
+          if (entry.value !== undefined) out[entry.name] = entry.value;
+          else if (entry.selected_option && entry.selected_option.id) out[entry.name] = entry.selected_option.id;
+          else out[entry.name] = entry; // fallback raw
+        }
+      }
+      return out;
+    }
+
+    function coerceFormCandidate(candidate) {
+      if (!candidate) return null;
+      if (Array.isArray(candidate)) return arrayToObject(candidate);
+      // If has 'fields' key that is array
+      if (Array.isArray(candidate.fields)) return arrayToObject(candidate.fields);
+      return candidate;
+    }
+
+  let f = null;
+    const formNames = ['service_form', 'serviceForm'];
+    const roots = [clear.fields, clear.data?.fields, clear.data];
+    for (const r of roots) {
+      if (!r) continue;
+      for (const name of formNames) {
+        if (r && r[name]) {
+          f = coerceFormCandidate(r[name]);
+          break;
+        }
+      }
+      if (f) break;
+      // Maybe fields are directly here (flatten if array)
+      if (Array.isArray(r)) {
+        f = arrayToObject(r);
+        break;
+      }
+      if (r.full_name || r.mobile || r.address || r.issue_type) {
+        f = coerceFormCandidate(r);
+        break;
+      }
+    }
+
+    // Additional extraction: form_responses array pattern
+    if (!f && clear.data && Array.isArray(clear.data.form_responses)) {
+      try {
+        for (const fr of clear.data.form_responses) {
+          if (!fr) continue;
+          if (fr.name === 'service_form' && Array.isArray(fr.fields)) { // preferred match
+            f = arrayToObject(fr.fields);
+            break;
+          }
+          if (Array.isArray(fr.fields)) {
+            const candidate = arrayToObject(fr.fields);
+            if (candidate.full_name || candidate.mobile) { f = candidate; break; }
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Deep scan fallback: traverse object tree for candidate fields
+    function deepScan(obj, depth = 0) {
+      if (!obj || depth > 6) return null;
+      if (Array.isArray(obj)) {
+        const arrObj = arrayToObject(obj);
+        if (arrObj.full_name || arrObj.mobile) return arrObj;
+        for (const el of obj) {
+          const found = deepScan(el, depth + 1);
+          if (found) return found;
+        }
+        return null;
+      }
+      if (typeof obj === 'object') {
+        if (obj.full_name || obj.mobile) return coerceFormCandidate(obj);
+        for (const k of Object.keys(obj)) {
+          const found = deepScan(obj[k], depth + 1);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    if (!f) f = deepScan(clear);
+
+    if (DEBUG) {
+      try {
+        console.log('[WA_FLOW_DEBUG] decrypted clear payload:', JSON.stringify(clear, null, 2));
+        console.log('[WA_FLOW_DEBUG] data:', JSON.stringify(clear.data, null, 2));
+        console.log('[WA_FLOW_DEBUG] extracted form keys:', f ? Object.keys(f) : null);
+        console.log('[WA_FLOW_DEBUG] raw form object:', JSON.stringify(f, null, 2));
+      } catch(_) {}
+    }
+
+    // Unwrap possible { value: "..." } containers
+    const unwrap = (v) => {
+      if (v && typeof v === 'object') {
+        if ("value" in v && Object.keys(v).length === 1) return v.value; // { value: "..." }
+        if (v.selected_option?.id) return v.selected_option.id; // dropdown pattern
+        if (Array.isArray(v.values) && v.values.length === 1) return v.values[0]; // { values: ["single"] }
+      }
+      return v;
+    };
+    const fullNameVal = normalizeName(unwrap(f?.full_name));
+    const mobileVal = normalizeMobile(unwrap(f?.mobile));
+    const addressVal = unwrap(f?.address);
+    const villageVal = unwrap(f?.village);
+    const issueTypeVal = unwrap(f?.issue_type);
+    const urgencyVal = unwrap(f?.urgency);
+    const preferredDateVal = unwrap(f?.preferred_date);
+
+    // Determine op consistently across shapes
+    const op =
+      (clear && clear.payload && clear.payload.op) ||
+      (clear && clear.data && clear.data.op) ||
+      (clear && clear.op) ||
+      null;
+
+    // Optional: log to confirm shape
+    try { console.log('WA FLOW MSG:', JSON.stringify({ op, keys: Object.keys(f || {}) })); } catch(_) {}
+
+    // Map issue_type id -> Hindi label (keep same if unknown)
+    const ISSUE_TYPE_LABELS_HI = {
+      no_generation_problem: "उत्पादन/बिजली बंद",
+      solar_plate_problem: "सोलर प्लेट समस्या",
+      net_metering_problem: "नेट मीटर समस्या",
+      app_problem: "ऐप समस्या",
+      inverter_problem: "इनवर्टर समस्या",
+      wiring_problem: "वायरिंग समस्या",
+      earthing_problem: "अर्थिंग समस्या",
+      other_problem: "अन्य समस्या",
+    };
+    const issueTypeLabelHi = issueTypeVal ? ISSUE_TYPE_LABELS_HI[issueTypeVal] || issueTypeVal : null;
+
+    // Build a normalized submission object (only when we have some data) for persistence
+    const submissionPayload = (f && (fullNameVal || mobileVal)) ? {
+      full_name: fullNameVal || null,
+      mobile: mobileVal || null,
+      address: addressVal,
+      village: villageVal,
+      issue_type: issueTypeVal,
+      issue_type_label_hi: issueTypeLabelHi,
+      urgency: urgencyVal,
+      preferred_date: preferredDateVal,
+      flow_screen: clear.screen,
+      op: clear.data?.op,
+      action: clear.action,
+      flow_version: clear.version || null,
+      data_api_version: clear.data_api_version || null,
+      received_at: new Date().toISOString(),
+      simulator: isSimulator,
+    } : null;
+
+    // Validate only for real final submissions
+  if (clear.action === "data_exchange" &&
+    (op === "submit_service_form") &&
+        !isSimulator) {
+      // Strict required list (current form fields)
+      const missing = [];
+      if (!fullNameVal) missing.push("full_name");
+      if (!mobileVal) missing.push("mobile");
+      if (!addressVal) missing.push("address");
+      if (!villageVal) missing.push("village");
+      if (!issueTypeVal) missing.push("issue_type");
+      if (!urgencyVal) missing.push("urgency");
+      if (!preferredDateVal) missing.push("preferred_date");
+
+      const RELAX = process.env.WA_FLOW_RELAX_VALIDATION === '1';
+      if (missing.length) {
+        if (RELAX) {
+          // Allow progression but flag partial
+            responseData = { ok: true, partial: true, missing };
+            nextScreen = "SERVICE_SUCCESS"; // proceed anyway
+        } else {
+          nextScreen = "BOOK_SERVICE";
+          responseData = { ok: false, error: "missing_required_fields", missing };
+        }
+      } else if (submissionPayload) {
+        // Fire & forget local persistence
+        persistServiceSubmission({ type: "service_form", ...submissionPayload });
+
+        // Forward to Make with BOTH op and normalized fields
+        try {
+          const hook = process.env.MAKE_WEBHOOK_URL;
+          if (hook) {
+            const fieldsToSend = {
+              full_name: fullNameVal,
+              mobile: mobileVal,
+              address: addressVal,
+              village: villageVal,
+              issue_type: issueTypeVal,
+              urgency: urgencyVal,
+              preferred_date: preferredDateVal,
+            };
+            await fetch(hook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                source: 'whatsapp_flow',
+                op: 'submit_service_form',
+                fields: fieldsToSend,
+                received_at: new Date().toISOString(),
+              }),
+            });
+          }
+        } catch (e) {
+          console.warn('Make.com forward (fields) failed (continuing):', e.message);
+        }
+      }
+    }
+
+    function normalizeMobile(raw) {
+      if (!raw || typeof raw !== "string") return null;
+      // Remove spaces, dashes, parentheses
+      let v = raw.replace(/[\s\-()]/g, "");
+      // Remove leading +91 or 0 if present
+      v = v.replace(/^\+?91/, "").replace(/^0+/, "");
+      // Accept only 10 digit final
+      if (!/^\d{10}$/.test(v)) return null;
+      return "+91" + v; // store normalized in +91XXXXXXXXXX format
+    }
+
+    function normalizeName(n) {
+      if (!n || typeof n !== "string") return null;
+      const trimmed = n.trim();
+      return trimmed.length ? trimmed : null;
+    }
+
+    const responseJson = { version: "3.0", screen: nextScreen, data: responseData };
+
+    // 4) Encrypt response according to Meta rules (AES-GCM with inverted IV) and return as base64 STRING
+    const encryptedB64 = encryptFlowResponseBody(responseJson, aesKey, ivBuf);
+
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "text/plain" }, // MUST be plain base64, not JSON
+      body: encryptedB64,
+    };
+  } catch (err) {
+    console.error("wa-flow-service error:", err);
+    return { statusCode: 500, body: "Internal Server Error" };
   }
-
-  // Missing fields → tell the Preview nicely; real device won’t normally hit this
-  return encrypted200({ ok: false, error: 'missing_required_fields', missing }, rawObj, aesKey);
 };
-
