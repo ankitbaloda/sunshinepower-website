@@ -4,159 +4,99 @@
 
 const crypto = require('crypto');
 
-// ===== WhatsApp Flows v3.0 Crypto (no npm) =====
-/**
- * Pick first present key (with optional base64 decoding).
- */
-function pick(obj, keys, { b64 = false } = {}) {
-  for (const k of keys) {
-    if (obj && Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null) {
-      return b64 ? Buffer.from(obj[k], 'base64') : obj[k];
+// ===== WhatsApp Flows v3.0 Crypto (no npm) with deep search for AES parts =====
+function deepFindB64(obj, keys) {
+  const stack = [obj];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur && typeof cur === 'object') {
+      for (const k of Object.keys(cur)) {
+        const v = cur[k];
+        if (v && typeof v === 'object') stack.push(v);
+      }
+      for (const name of keys) {
+        if (Object.prototype.hasOwnProperty.call(cur, name) && cur[name] != null) {
+          try { return Buffer.from(cur[name], 'base64'); } catch (_) { /* ignore */ }
+        }
+      }
     }
   }
   return undefined;
 }
 
-/**
- * Parse the incoming base64 body to an "envelope".
- * The envelope is a JSON object that carries the RSA-encrypted AES key and AES-GCM parts.
- */
-function parseEnvelopeFromBase64(rawBase64) {
-  // Some SDKs send plain JSON (not base64); be tolerant
-  let buf;
-  try { buf = Buffer.from(rawBase64, 'base64'); } catch (_) { buf = null; }
-  const asText = buf ? buf.toString('utf8') : String(rawBase64 || '');
-  let env;
-  try { env = JSON.parse(asText); }
-  catch (e) {
-    // If even this fails, surface a minimal object to help with debugging
-    return { _raw: rawBase64 };
-  }
-  return env;
+function parseRawEnvelope(body) {
+  // Body might already be JSON or base64(JSON)
+  let txt = body;
+  try { txt = Buffer.from(body, 'base64').toString('utf8'); } catch (_) { /* not base64 */ }
+  try { return JSON.parse(txt); } catch (_) { return null; }
 }
 
-/**
- * RSA-OAEP(SHA-256) unwrap for AES key.
- */
-function rsaUnwrapAESKey(encryptedKeyBuf, rsaPrivateKeyPem) {
+function rsaUnwrap(encryptedKeyBuf, rsaPrivateKeyPem) {
   return crypto.privateDecrypt(
-    {
-      key: rsaPrivateKeyPem,
-      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: 'sha256'
-    },
+    { key: rsaPrivateKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
     encryptedKeyBuf
   );
 }
 
-/**
- * AES-256-GCM decrypt.
- */
 function aesGcmDecrypt(keyBuf, ivBuf, ctBuf, tagBuf) {
-  const decipher = crypto.createDecipheriv('aes-256-gcm', keyBuf, ivBuf);
-  decipher.setAuthTag(tagBuf);
-  const plain = Buffer.concat([decipher.update(ctBuf), decipher.final()]);
-  return plain;
+  const dec = crypto.createDecipheriv('aes-256-gcm', keyBuf, ivBuf);
+  dec.setAuthTag(tagBuf);
+  return Buffer.concat([dec.update(ctBuf), dec.final()]);
 }
 
-/**
- * AES-256-GCM encrypt (returns { ivB64, ctB64, tagB64 }).
- */
 function aesGcmEncrypt(keyBuf, jsonString) {
-  const iv = crypto.randomBytes(12); // 96-bit IV is standard for GCM
-  const cipher = crypto.createCipheriv('aes-256-gcm', keyBuf, iv);
-  const ct = Buffer.concat([cipher.update(Buffer.from(jsonString, 'utf8')), cipher.final()]);
-  const tag = cipher.getAuthTag();
+  const iv = crypto.randomBytes(12);
+  const enc = crypto.createCipheriv('aes-256-gcm', keyBuf, iv);
+  const ct = Buffer.concat([enc.update(Buffer.from(jsonString, 'utf8')), enc.final()]);
+  const tag = enc.getAuthTag();
   return {
-    ivB64: iv.toString('base64'),
-    ctB64: ct.toString('base64'),
-    tagB64: tag.toString('base64')
+    iv: iv.toString('base64'),
+    ciphertext: ct.toString('base64'),
+    tag: tag.toString('base64')
   };
 }
 
-/**
- * Decrypt WhatsApp Flow request body (Base64 string) to a JS object.
- * Returns {msg, keyBuf, envelope} on success.
- */
-function decryptPayload(rawBase64, rsaPrivateKeyPem) {
-  const envelope = parseEnvelopeFromBase64(rawBase64);
+// Decrypt request → { msg, keyBuf, rawEnvelope }
+function decryptPayload(eventBody, rsaPrivateKeyPem) {
+  const rawEnvelope = parseRawEnvelope(eventBody);
+  if (!rawEnvelope) return { msg: null, keyBuf: null, rawEnvelope: null, previewLike: true };
 
-  // Common field names (Meta examples & variants)
-  const ekBuf = pick(envelope, ['encrypted_aes_key', 'ek', 'aes_key_b64'], { b64: true });
-  const ivBuf = pick(envelope, ['iv', 'iv_b64'], { b64: true });
-  const ctBuf = pick(envelope, ['ciphertext', 'ct'], { b64: true });
-  const tagBuf = pick(envelope, ['tag', 'tag_b64'], { b64: true });
+  // Try to locate AES parts anywhere in the structure
+  const ek = deepFindB64(rawEnvelope, ['encrypted_aes_key','ek','encryptedKey']);
+  const iv = deepFindB64(rawEnvelope, ['iv','iv_b64','nonce']);
+  const ct = deepFindB64(rawEnvelope, ['ciphertext','ct','encrypted_data','ed']);
+  const tag = deepFindB64(rawEnvelope, ['tag','tag_b64','mac','auth_tag']);
 
-  if (!ekBuf || !ivBuf || !ctBuf || !tagBuf) {
-    // Might be a preview/health check sending plain JSON (un-encrypted)
-    // Try to parse as already-plain body:
-    if (typeof envelope === 'object' && !Buffer.isBuffer(envelope)) {
-      return { msg: envelope, keyBuf: null, envelope: null, previewLike: true };
-    }
-    throw new Error('Malformed envelope: missing ek/iv/ct/tag');
+  if (!ek || !iv || !ct || !tag) {
+    // Likely preview/Actions (no encryption)
+    return { msg: rawEnvelope, keyBuf: null, rawEnvelope, previewLike: true };
   }
 
-  const aesKey = rsaUnwrapAESKey(ekBuf, rsaPrivateKeyPem);
-  if (aesKey.length !== 32) {
-    throw new Error('Unexpected AES key length (expected 32 bytes for AES-256)');
-  }
-
-  const plaintext = aesGcmDecrypt(aesKey, ivBuf, ctBuf, tagBuf);
-  const msg = JSON.parse(plaintext.toString('utf8'));
-  return { msg, keyBuf: aesKey, envelope };
+  const keyBuf = rsaUnwrap(ek, rsaPrivateKeyPem);     // 32 bytes
+  const plain = aesGcmDecrypt(keyBuf, iv, ct, tag);
+  const msg = JSON.parse(plain.toString('utf8'));
+  return { msg, keyBuf, rawEnvelope };
 }
 
-/**
- * Encrypt a JS object as a WhatsApp Flow response using the SAME AES session key.
- * Returns Base64(JSON{ iv, ciphertext, tag }) string.
- */
-function encryptResponse(obj, requestEnvelope, rsaPrivateKeyPem, reusedKeyBuf) {
-  // Prefer reusing the already unwrapped AES key (reusedKeyBuf).
-  // If not provided, try to unwrap from requestEnvelope again (costly but safe).
-  let keyBuf = reusedKeyBuf;
+function encryptResponse(obj, rawEnvelope, rsaPrivateKeyPem, keyBuf) {
+  // If keyBuf not provided, try unwrap again from the same rawEnvelope
   if (!keyBuf) {
-    const ekBuf = pick(requestEnvelope, ['encrypted_aes_key', 'ek', 'aes_key_b64'], { b64: true });
-    if (!ekBuf) {
-      // No AES key present (preview/Actions) → throw so caller can fallback to plain JSON
-      throw new Error('No AES key in request');
-    }
-    keyBuf = rsaUnwrapAESKey(ekBuf, rsaPrivateKeyPem);
+    const ek = deepFindB64(rawEnvelope, ['encrypted_aes_key','ek','encryptedKey']);
+    if (!ek) throw new Error('No AES key in request');
+    keyBuf = rsaUnwrap(ek, rsaPrivateKeyPem);
   }
-
-  const { ivB64, ctB64, tagB64 } = aesGcmEncrypt(keyBuf, JSON.stringify(obj));
-
-  const responseEnvelope = {
-    iv: ivB64,
-    ciphertext: ctB64,
-    tag: tagB64
-  };
-
-  // Return Base64(JSON(envelope)) as required by Flows Data API
-  return Buffer.from(JSON.stringify(responseEnvelope), 'utf8').toString('base64');
+  const env = aesGcmEncrypt(keyBuf, JSON.stringify(obj));
+  return Buffer.from(JSON.stringify(env), 'utf8').toString('base64');
 }
 
-/**
- * Convenience: build a proper Netlify 200 with base64 body.
- */
-function encrypted200(obj, requestEnvelope, rsaPrivateKeyPem, keyBuf) {
+function encrypted200(obj, rawEnvelope, rsaPrivateKeyPem, keyBuf) {
   try {
-    // Try proper AES-GCM encryption using the session key from the request
-    const bodyB64 = encryptResponse(obj, requestEnvelope, rsaPrivateKeyPem, keyBuf);
-    return {
-      statusCode: 200,
-      isBase64Encoded: true,
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: bodyB64
-    };
+    const b64 = encryptResponse(obj, rawEnvelope, rsaPrivateKeyPem, keyBuf);
+    return { statusCode: 200, isBase64Encoded: true, headers: { 'Content-Type': 'application/octet-stream' }, body: b64 };
   } catch (e) {
-    // Fallback: Preview/Actions often send plain JSON without AES key.
-    // Return normal JSON so we don't 502. The Builder may show "could not decrypt" — that's OK in preview.
-    console.warn('encrypted200 fallback (no AES key):', e.message);
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(obj)
-    };
+    // Preview/Actions without AES: return JSON so we don’t 502
+    console.warn('encrypted200 fallback:', e.message);
+    return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) };
   }
 }
 
@@ -187,12 +127,12 @@ exports.handler = async (event) => {
   }
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method Not Allowed' };
 
-  let decrypted, msg, aesKey, env;
+  let dec, msg, aesKey, rawEnvelope;
   try {
-    decrypted = decryptPayload(event.body, process.env.WA_PRIVATE_KEY);
-    msg = decrypted.msg;           // decrypted object (or preview JSON)
-    aesKey = decrypted.keyBuf;     // Buffer(32) if real request; null if preview/health
-    env = decrypted.envelope;      // original request envelope used to re-use AES key
+    dec = decryptPayload(event.body, process.env.WA_PRIVATE_KEY);
+    msg = dec.msg;                 // decrypted object (or preview JSON)
+    aesKey = dec.keyBuf;           // Buffer(32) if real request; null if preview/health
+    rawEnvelope = dec.rawEnvelope; // original raw request envelope to reuse AES parts
   } catch (e) {
     console.error('Decrypt error:', e.message);
     return { statusCode: 400, body: 'Bad Request' };
@@ -200,7 +140,7 @@ exports.handler = async (event) => {
 
   // Health check → EXACT payload expected by WhatsApp
   if (isHealthCheckMessage(msg)) {
-    return encrypted200({ data: { status: 'active' } }, env || msg, process.env.WA_PRIVATE_KEY, aesKey);
+    return encrypted200({ data: { status: 'active' } }, rawEnvelope || msg, process.env.WA_PRIVATE_KEY, aesKey);
   }
 
   // Your op routing
@@ -238,12 +178,12 @@ exports.handler = async (event) => {
     }
 
     // Reply with screen transition (must be encrypted with same session key)
-    return encrypted200({ version: '3.0', screen: 'SERVICE_SUCCESS', data: { ok: true } },
-                        env || msg, process.env.WA_PRIVATE_KEY, aesKey);
+  return encrypted200({ version: '3.0', screen: 'SERVICE_SUCCESS', data: { ok: true } },
+            rawEnvelope || msg, process.env.WA_PRIVATE_KEY, aesKey);
   }
 
   // Missing fields → tell the Preview nicely; real device won’t normally hit this
   return encrypted200({ ok: false, error: 'missing_required_fields', missing },
-                      env || msg, process.env.WA_PRIVATE_KEY, aesKey);
+                      rawEnvelope || msg, process.env.WA_PRIVATE_KEY, aesKey);
 };
 
