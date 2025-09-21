@@ -67,8 +67,8 @@ exports.handler = async (event) => {
       console.warn("Make.com forward failed (continuing):", e.message);
     }
 
-    // 3) Build response JSON expected by Flows
-    //    You can decide next screen based on validation/business logic.
+  // 3) Build response JSON expected by Flows
+  //    You can decide next screen based on validation/business logic.
     let nextScreen = "SERVICE_SUCCESS";
     let responseData = { ok: true };
 
@@ -102,7 +102,7 @@ exports.handler = async (event) => {
       return candidate;
     }
 
-    let f = null;
+  let f = null;
     const formNames = ['service_form', 'serviceForm'];
     const roots = [clear.fields, clear.data?.fields, clear.data];
     for (const r of roots) {
@@ -191,6 +191,16 @@ exports.handler = async (event) => {
     const urgencyVal = unwrap(f?.urgency);
     const preferredDateVal = unwrap(f?.preferred_date);
 
+    // Determine op consistently across shapes
+    const op =
+      (clear && clear.payload && clear.payload.op) ||
+      (clear && clear.data && clear.data.op) ||
+      (clear && clear.op) ||
+      null;
+
+    // Optional: log to confirm shape
+    try { console.log('WA FLOW MSG:', JSON.stringify({ op, keys: Object.keys(f || {}) })); } catch(_) {}
+
     // Map issue_type id -> Hindi label (keep same if unknown)
     const ISSUE_TYPE_LABELS_HI = {
       no_generation_problem: "उत्पादन/बिजली बंद",
@@ -224,8 +234,8 @@ exports.handler = async (event) => {
     } : null;
 
     // Validate only for real final submissions
-    if (clear.action === "data_exchange" &&
-        clear.data?.op === "submit_service_form" &&
+  if (clear.action === "data_exchange" &&
+    (op === "submit_service_form") &&
         !isSimulator) {
       // Strict required list (current form fields)
       const missing = [];
@@ -248,8 +258,36 @@ exports.handler = async (event) => {
           responseData = { ok: false, error: "missing_required_fields", missing };
         }
       } else if (submissionPayload) {
-        // Fire & forget with retry (do not await full completion to avoid latency)
+        // Fire & forget local persistence
         persistServiceSubmission({ type: "service_form", ...submissionPayload });
+
+        // Forward to Make with BOTH op and normalized fields
+        try {
+          const hook = process.env.MAKE_WEBHOOK_URL;
+          if (hook) {
+            const fieldsToSend = {
+              full_name: fullNameVal,
+              mobile: mobileVal,
+              address: addressVal,
+              village: villageVal,
+              issue_type: issueTypeVal,
+              urgency: urgencyVal,
+              preferred_date: preferredDateVal,
+            };
+            await fetch(hook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                source: 'whatsapp_flow',
+                op: 'submit_service_form',
+                fields: fieldsToSend,
+                received_at: new Date().toISOString(),
+              }),
+            });
+          }
+        } catch (e) {
+          console.warn('Make.com forward (fields) failed (continuing):', e.message);
+        }
       }
     }
 
