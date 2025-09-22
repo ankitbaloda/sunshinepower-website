@@ -94,7 +94,9 @@ exports.handler = async (event) => {
     }
 
     // 1) Decrypt incoming payload from Meta (Flows Data API v3.0)
-    const { clear, aesKey, ivBuf } = decryptFlowRequestBody(event.body, PRIVATE_KEY);
+  const { clear, aesKey, ivBuf } = decryptFlowRequestBody(event.body, PRIVATE_KEY);
+  // Force full decrypted dump for Netlify logs to inspect exact shape
+  try { console.log("DECRYPTED CLEAR:", JSON.stringify(clear, null, 2)); } catch (_) {}
     // Example 'clear': { version:"3.0", action:"data_exchange"|"health_check", screen:"BOOK_SERVICE", data:{...}, flow_token:"..." }
 
     // One-time diagnostic logs to confirm decrypted payload and field keys
