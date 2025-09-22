@@ -2,6 +2,82 @@
 const { decryptFlowRequestBody, encryptFlowResponseBody } = require("../lib/waCrypto");
 const { persistServiceSubmission } = require("../lib/persist");
 
+// -------- Robust form fields extractor helpers --------
+function arrayToObject(arr) {
+  const out = {};
+  for (const entry of arr || []) {
+    if (!entry) continue;
+    const name = entry.name || entry.key || entry.id;
+    if (!name) continue;
+    if (entry.value !== undefined) out[name] = entry.value;
+    else if (entry.selected_option && entry.selected_option.id) out[name] = entry.selected_option.id;
+    else if (Array.isArray(entry.values) && entry.values.length === 1) out[name] = entry.values[0];
+    else out[name] = entry; // raw fallback
+  }
+  return out;
+}
+
+function coerceFormCandidate(candidate) {
+  if (!candidate) return null;
+  if (Array.isArray(candidate)) return arrayToObject(candidate);
+  if (Array.isArray(candidate.fields)) return arrayToObject(candidate.fields);
+  return candidate;
+}
+
+function deepScanForFields(obj, depth = 0) {
+  if (!obj || depth > 8) return null;
+  if (Array.isArray(obj)) {
+    const asObj = arrayToObject(obj);
+    if (Object.keys(asObj).length) return asObj;
+    for (const el of obj) {
+      const found = deepScanForFields(el, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof obj === 'object') {
+    if (obj.fields) {
+      const cc = coerceFormCandidate(obj);
+      if (cc && Object.keys(cc).length) return cc;
+    }
+    for (const key of Object.keys(obj)) {
+      if (/form|fields|responses/i.test(key)) {
+        const cc = coerceFormCandidate(obj[key]);
+        if (cc && Object.keys(cc).length) return cc;
+      }
+    }
+    for (const key of Object.keys(obj)) {
+      const found = deepScanForFields(obj[key], depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function extractFormFields(clear) {
+  const roots = [
+    clear?.data?.fields,
+    clear?.data?.service_form,
+    clear?.fields,
+    clear?.data
+  ];
+  for (const r of roots) {
+    const cand = coerceFormCandidate(r);
+    if (cand && Object.keys(cand).length) return cand;
+  }
+  if (Array.isArray(clear?.data?.form_responses)) {
+    for (const fr of clear.data.form_responses) {
+      if (!fr) continue;
+      if (Array.isArray(fr.fields)) {
+        const cand = arrayToObject(fr.fields);
+        if (Object.keys(cand).length) return cand;
+      }
+    }
+  }
+  const deep = deepScanForFields(clear);
+  return deep || {};
+}
+
 // One-time log guard per function instance
 let __LOGGED_ONCE__ = false;
 
@@ -99,91 +175,7 @@ exports.handler = async (event) => {
 
     // Robust field extraction across possible shapes (handles object, array, nested 'fields')
     const DEBUG = process.env.WA_FLOW_DEBUG === '1';
-
-    function arrayToObject(arr) {
-      const out = {};
-      for (const entry of arr) {
-        if (!entry) continue;
-        // Accept shapes: { name, value } or { name, selected_option:{ id } }
-        if (entry.name) {
-          if (entry.value !== undefined) out[entry.name] = entry.value;
-          else if (entry.selected_option && entry.selected_option.id) out[entry.name] = entry.selected_option.id;
-          else out[entry.name] = entry; // fallback raw
-        }
-      }
-      return out;
-    }
-
-    function coerceFormCandidate(candidate) {
-      if (!candidate) return null;
-      if (Array.isArray(candidate)) return arrayToObject(candidate);
-      // If has 'fields' key that is array
-      if (Array.isArray(candidate.fields)) return arrayToObject(candidate.fields);
-      return candidate;
-    }
-
-  let f = null;
-    const formNames = ['service_form', 'serviceForm'];
-    const roots = [clear.fields, clear.data?.fields, clear.data];
-    for (const r of roots) {
-      if (!r) continue;
-      for (const name of formNames) {
-        if (r && r[name]) {
-          f = coerceFormCandidate(r[name]);
-          break;
-        }
-      }
-      if (f) break;
-      // Maybe fields are directly here (flatten if array)
-      if (Array.isArray(r)) {
-        f = arrayToObject(r);
-        break;
-      }
-      if (r.full_name || r.mobile || r.address || r.issue_type) {
-        f = coerceFormCandidate(r);
-        break;
-      }
-    }
-
-    // Additional extraction: form_responses array pattern
-    if (!f && clear.data && Array.isArray(clear.data.form_responses)) {
-      try {
-        for (const fr of clear.data.form_responses) {
-          if (!fr) continue;
-          if (fr.name === 'service_form' && Array.isArray(fr.fields)) { // preferred match
-            f = arrayToObject(fr.fields);
-            break;
-          }
-          if (Array.isArray(fr.fields)) {
-            const candidate = arrayToObject(fr.fields);
-            if (candidate.full_name || candidate.mobile) { f = candidate; break; }
-          }
-        }
-      } catch (e) { /* ignore */ }
-    }
-
-    // Deep scan fallback: traverse object tree for candidate fields
-    function deepScan(obj, depth = 0) {
-      if (!obj || depth > 6) return null;
-      if (Array.isArray(obj)) {
-        const arrObj = arrayToObject(obj);
-        if (arrObj.full_name || arrObj.mobile) return arrObj;
-        for (const el of obj) {
-          const found = deepScan(el, depth + 1);
-          if (found) return found;
-        }
-        return null;
-      }
-      if (typeof obj === 'object') {
-        if (obj.full_name || obj.mobile) return coerceFormCandidate(obj);
-        for (const k of Object.keys(obj)) {
-          const found = deepScan(obj[k], depth + 1);
-          if (found) return found;
-        }
-      }
-      return null;
-    }
-    if (!f) f = deepScan(clear);
+    const f = extractFormFields(clear);
 
     if (DEBUG) {
       try {
@@ -219,7 +211,14 @@ exports.handler = async (event) => {
       null;
 
     // Optional: log to confirm shape
-    try { console.log('WA FLOW MSG:', JSON.stringify({ op, keys: Object.keys(f || {}) })); } catch(_) {}
+    try {
+      console.log('WA FLOW MSG:', JSON.stringify({
+        op,
+        action: clear?.action,
+        screen: clear?.screen,
+        keys: Object.keys(f || {})
+      }));
+    } catch(_) {}
 
     // Map issue_type id -> Hindi label (keep same if unknown)
     const ISSUE_TYPE_LABELS_HI = {
