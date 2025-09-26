@@ -1,6 +1,6 @@
 // netlify/functions/wa-flow-service.js
 
-import fetch from "node-fetch";
+
 
 function isPlaceholder(v) {
   return typeof v === "string" && /^\$\{[^}]+\}$/.test(v);
@@ -40,25 +40,38 @@ function deepFind(obj, names) {
 }
 
 async function fetchFlowValuesByToken(flow_token) {
-  const GRAPH_TOKEN = process.env.WHATSAPP_GRAPH_TOKEN || "YOUR_GRAPH_TOKEN";
-  const FLOW_DATA_URL = process.env.FLOW_DATA_URL || "https://graph.facebook.com/v20.0/flows?action=data_exchange_fetch";
+  const GRAPH_TOKEN = process.env.WHATSAPP_GRAPH_TOKEN;
+  const FLOW_DATA_URL =
+    process.env.FLOW_DATA_URL ||
+    "https://graph.facebook.com/v20.0/flows?action=data_exchange_fetch";
+
+  if (!GRAPH_TOKEN) return {};
+
   try {
     const res = await fetch(FLOW_DATA_URL, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${GRAPH_TOKEN}`,
-        "Content-Type": "application/json"
+        Authorization: `Bearer ${GRAPH_TOKEN}`,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ flow_token })
+      body: JSON.stringify({ flow_token }),
     });
     if (!res.ok) {
       const t = await res.text();
-      throw new Error(`Flow Data API ${res.status}: ${t}`);
+      console.error("Flow Data API error:", res.status, t);
+      return {};
     }
     const j = await res.json();
-    const names = new Set(["full_name","mobile","address","village","issue_type","urgency","preferred_date"]);
-    const found = deepFind(j, names);
-    return found;
+    const names = new Set([
+      "full_name",
+      "mobile",
+      "address",
+      "village",
+      "issue_type",
+      "urgency",
+      "preferred_date",
+    ]);
+    return deepFind(j, names);
   } catch (e) {
     console.error("Flow Data API fetch failed:", e);
     return {};
